@@ -58,7 +58,7 @@
    (eof :initform nil
 	:accessor lexer-eof)
    (buffer :initform (make-buffer)
-           :reader lexer-buffer
+           :accessor lexer-buffer
            :type string)
    (match :initform (make-instance 'lexer-token
                                    :line 0
@@ -90,13 +90,6 @@ buffer for matching at index."))
 (defgeneric (setf lexer-match-start) (value lexer)
   (:documentation "Set token start for lexer match."))
 
-(defgeneric lexer-pop (lexer)
-  (:documentation "Return the last token on lexer stack."))
-
-(defgeneric lexer-push (lexer)
-  (:documentation "Push a copy of the lexer match onto the lexer
-stack."))
-
 (defgeneric lexer-push-extend (lexer character)
   (:documentation "Put a character into lexer buffer, extending it by
 *BUFFER-SIZE* if necessary."))
@@ -119,6 +112,24 @@ lexer buffer."))
   (:documentation "Advance lexer match start until THING is matched in
 lexer buffer."))
 
+(defgeneric pop-token (lexer)
+  (:documentation "Return the last token on lexer stack."))
+
+(defgeneric push-token (lexer)
+  (:documentation "Push a copy of the lexer match onto the lexer
+stack."))
+
+;;  Stream methods
+
+(defmethod stream-close ((lx lexer))
+  (stream-close (lexer-in lx)))
+
+(defmethod stream-element-type ((lx lexer))
+  'token)
+
+(defmethod stream-open-p ((lx lexer))
+  (stream-open-p (lexer-in lx)))
+
 ;;  Input
 
 (defmethod lexer-push-extend ((lx lexer) (c character))
@@ -140,15 +151,14 @@ lexer buffer."))
     (multiple-value-bind (c state) (stream-read in)
       (ecase state
         ((nil) (let* ((pos (the fixnum (lexer-push-extend lx c)))
-                      (buf (lexer-buffer lx))
-                      (buf-char (char buf (the fixnum (1- pos)))))
-                 (declare (type (vector character) buf)
-                          (type character buf-char))
+                      (buf (lexer-buffer lx)))
+                 (declare (type (vector character) buf))
                  (cond ((or (and (char= #\Newline c)
-                                 (not (and (< 0 pos)
-                                           (char= #\Return buf-char))))
+                                 (or (not (< 0 pos))
+                                     (char/= #\Return
+                                             (char buf (1- pos)))))
                             (char= #\Return c))
-                        (setf (lexer-character lx) 0)
+                        (setf (lexer-in-character lx) 0)
                         (incf (the fixnum (lexer-in-line lx))))
                        (t
                         (incf (the fixnum (lexer-in-character lx)))))
@@ -170,16 +180,22 @@ lexer buffer."))
                    (the fixnum (lexer-match-start lx)))
                 n)
        (return))
+     (when (lexer-eof lx)
+       (return))
      (lexer-input lx)))
 
 (defmethod lexer-match-char ((lx lexer) (index fixnum))
   (lexer-input-n lx (the fixnum (1+ index)))
-  (char (lexer-buffer lx) (+ (the fixnum (lexer-match-start lx))
-                             index)))
+  (let ((buf (lexer-buffer lx))
+        (match-index (+ (the fixnum (lexer-match-start lx))
+                        index)))
+    (declare (type (vector character) buf)
+             (type fixnum match-index))
+    (char buf match-index)))
 
 ;;  Tokenizer
 
-(defmethod lexer-push ((lx lexer))
+(defmethod push-token ((lx lexer))
   (let* ((match (lexer-match lx))
          (line (token-line match))
          (character (token-character match))
@@ -190,7 +206,7 @@ lexer buffer."))
                                :start start)))
     (push token (lexer-stack lx))))
 
-(defmethod lexer-pop ((lx lexer))
+(defmethod pop-token ((lx lexer))
   (assert (lexer-stack lx))
   (let* ((buffer (lexer-buffer lx))
 	 (fp (fill-pointer buffer))
@@ -205,7 +221,7 @@ lexer buffer."))
     token))
 
 (defmethod make-token ((lx lexer) (class symbol) &rest initargs)
-  (let ((lt (lexer-pop lx)))
+  (let ((lt (pop-token lx)))
     (apply #'make-instance class
 	   :string (token-string lt)
 	   :line (token-line lt)
@@ -213,7 +229,7 @@ lexer buffer."))
 	   initargs)))
 
 (defmethod discard-token ((lx lexer))
-  (lexer-pop lx)
+  (pop-token lx)
   nil)
 
 ;;  Matcher

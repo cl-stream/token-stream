@@ -26,7 +26,11 @@
    #:*buffer-size*
    #:discard-token
    #:lexer
-   #:lexer-push
+   #:lexer-eof
+   #:lexer-input
+   #:lexer-input-n
+   #:lexer-match-char
+   #:lexer-match-start
    #:lexer-token
    #:make-token
    #:match
@@ -35,5 +39,8 @@
    #:match-sequence
    #:match-times
    #:match-until
+   #:pop-token
+   #:push-token
    #:token
-   #:token-stream))
+   #:token-stream
+   #:token-string))
