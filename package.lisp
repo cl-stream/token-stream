@@ -26,7 +26,10 @@
    #:*buffer-size*
    #:discard-token
    #:lexer
-   #:lexer-eof
+   #:lexer-buffer
+   #:lexer-in-character
+   #:lexer-in-eof
+   #:lexer-in-line
    #:lexer-input
    #:lexer-input-n
    #:lexer-match-char

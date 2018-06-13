@@ -55,8 +55,8 @@
               :initform -1
               :accessor lexer-in-character
               :type fixnum)
-   (eof :initform nil
-	:accessor lexer-eof)
+   (in-eof :initform nil
+           :accessor lexer-in-eof)
    (buffer :initform (make-buffer)
            :accessor lexer-buffer
            :type string)
@@ -68,7 +68,10 @@
           :type lexer-token)
    (stack :initform ()
           :accessor lexer-stack
-          :type list)))
+          :type list)
+   (eof-p :initform nil
+          :accessor lexer-eof-p
+          :type boolean)))
 
 (defgeneric discard-token (lexer)
   (:documentation "Discard token from lexer stack top."))
@@ -93,6 +96,9 @@ buffer for matching at index."))
 (defgeneric lexer-push-extend (lexer character)
   (:documentation "Put a character into lexer buffer, extending it by
 *BUFFER-SIZE* if necessary."))
+
+(defgeneric lexer-token (lexer)
+  (:documentation "Consumes and returns a token."))
 
 (defgeneric make-token (lexer symbol &rest initargs)
   (:documentation "Create a token of given class from lexer stack
@@ -163,28 +169,33 @@ stack."))
                        (t
                         (incf (the fixnum (lexer-in-character lx)))))
                  (values c nil)))
-        ((:eof) (setf (lexer-eof lx) t)
+        ((:eof) (setf (lexer-in-eof lx) t)
          (values nil :eof))
         ((:non-blocking)
-         (values nil :non-blocking))))))
+         (signal (make-condition 'non-blocking :stream lx)))))))
 
 (defmethod lexer-match-start ((lx lexer))
   (token-start (lexer-match lx)))
 
-(defmethod (setf lexer-match-start) ((value fixnum) (lx lexer))
-  (setf (token-start (lexer-match lx)) value))
+(defmethod (setf lexer-match-start) ((value integer) (lx lexer))
+  (setf (token-start (lexer-match lx)) (the fixnum value)))
 
-(defmethod lexer-input-n ((lx lexer) (n fixnum))
+(defmethod lexer-input-n ((lx lexer) (n integer))
+  (declare (type fixnum n))
   (loop
-     (unless (< (- (the fixnum (fill-pointer (lexer-buffer lx)))
-                   (the fixnum (lexer-match-start lx)))
-                n)
-       (return))
-     (when (lexer-eof lx)
-       (return))
-     (lexer-input lx)))
+     (let ((length (- (the fixnum (fill-pointer (lexer-buffer lx)))
+                      (the fixnum (lexer-match-start lx)))))
+       (declare (type fixnum length))
+       (when (lexer-in-eof lx)
+         (if (= 0 length)
+             (signal (make-instance 'end-of-file :stream lx))
+             (return)))
+       (unless (< length n)
+         (return))
+       (lexer-input lx))))
 
-(defmethod lexer-match-char ((lx lexer) (index fixnum))
+(defmethod lexer-match-char ((lx lexer) (index integer))
+  (declare (type fixnum index))
   (lexer-input-n lx (the fixnum (1+ index)))
   (let ((buf (lexer-buffer lx))
         (match-index (+ (the fixnum (lexer-match-start lx))
@@ -206,13 +217,16 @@ stack."))
                                :start start)))
     (push token (lexer-stack lx))))
 
+(defun subseq* (sequence start &optional end)
+  (subseq sequence start end))
+
 (defmethod pop-token ((lx lexer))
   (assert (lexer-stack lx))
   (let* ((buffer (lexer-buffer lx))
 	 (fp (fill-pointer buffer))
 	 (token (pop (lexer-stack lx)))
 	 (match-start (lexer-match-start lx))
-         (string (subseq buffer (token-start token) match-start)))
+         (string (subseq* buffer (token-start token) match-start)))
     (setf (token-string token) string)
     (when (endp (lexer-stack lx))
       (replace buffer buffer :start2 match-start :end2 fp)
@@ -229,7 +243,14 @@ stack."))
 	   initargs)))
 
 (defmethod discard-token ((lx lexer))
-  (pop-token lx)
+  (pop (lexer-stack lx))
+  (when (endp (lexer-stack lx))
+    (let* ((buffer (lexer-buffer lx))
+           (fp (fill-pointer buffer))
+           (match-start (lexer-match-start lx)))
+      (replace buffer buffer :start2 match-start :end2 fp)
+      (setf (lexer-match-start lx) 0
+            (fill-pointer buffer) (- fp match-start))))
   nil)
 
 ;;  Matcher
@@ -251,7 +272,7 @@ stack."))
      (let ((match (match lx s)))
        (when match
          (return match)))
-     (when (lexer-eof lx)
+     (when (lexer-in-eof lx)
        (return))
      (lexer-input lx)
      (incf (the fixnum (lexer-match-start lx)))))
@@ -263,7 +284,7 @@ stack."))
 (defmethod match-not ((lx lexer) (f function))
   (let ((match-start (lexer-match-start lx)))
     (cond ((or (funcall f lx)
-               (lexer-eof lx))
+               (lexer-in-eof lx))
            (setf (lexer-match-start lx) match-start)
            nil)
           (t
@@ -282,7 +303,8 @@ stack."))
 	      (setf (lexer-match-start ,lx) ,match-start)
 	      nil)))))
 
-(defmethod match-times ((lx lexer) (f function) (min fixnum) (max fixnum))
+(defmethod match-times ((lx lexer) (f function) (min integer) (max integer))
+  (declare (type fixnum min max))
   (match-sequence lx
     (let ((n 0))
       (loop
@@ -294,7 +316,8 @@ stack."))
                (return (lexer-match-start lx))))
          (incf n)))))
 
-(defmethod match-times ((lx lexer) (f function) (min fixnum) (max null))
+(defmethod match-times ((lx lexer) (f function) (min integer) (max null))
+  (declare (type fixnum min))
   (match-sequence lx
     (let ((n 0))
       (declare (type fixnum n))
@@ -304,3 +327,10 @@ stack."))
                (return nil)
                (return (lexer-match-start lx))))
          (incf n)))))
+
+(defmethod stream-read ((lx lexer))
+  (if (lexer-eof-p lx)
+      (values nil :eof)
+      (handler-case (values (lexer-token lx) nil)
+        (end-of-file () (values nil :eof))
+        (non-blocking () (values nil :non-blocking)))))
