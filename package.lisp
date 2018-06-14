@@ -27,6 +27,7 @@
    #:discard-token
    #:lexer
    #:lexer-buffer
+   #:lexer-eof-p
    #:lexer-in-character
    #:lexer-in-eof
    #:lexer-in-line
