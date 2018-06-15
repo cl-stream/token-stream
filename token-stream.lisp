@@ -43,20 +43,18 @@
               :adjustable t
               :fill-pointer 0))
 
-(defclass lexer (input-stream)
-  ((in :initarg :stream
-       :reader lexer-in
-       :type input-stream)
-   (in-line :initarg :line
+(defclass lexer (super-stream input-stream)
+  ((line :initarg :line
          :initform 0
-         :accessor lexer-in-line
+         :accessor lexer-line
          :type fixnum)
-   (in-character :initarg :character
+   (character :initarg :character
               :initform -1
-              :accessor lexer-in-character
+              :accessor lexer-character
               :type fixnum)
-   (in-eof :initform nil
-           :accessor lexer-in-eof)
+   (input-ended :initform nil
+                :accessor lexer-input-ended
+                :type boolean)
    (buffer :initform (make-buffer)
            :accessor lexer-buffer
            :type string)
@@ -127,18 +125,12 @@ stack."))
 
 ;;  Stream methods
 
-(defmethod stream-close ((lx lexer))
-  (stream-close (lexer-in lx)))
-
 (defmethod stream-element-type ((lx lexer))
   'token)
 
-(defmethod stream-open-p ((lx lexer))
-  (stream-open-p (lexer-in lx)))
-
 ;;  Input
 
-(defmethod lexer-push-extend ((lx lexer) (c character))
+(defmethod lexer-push-extend ((lx lexer) item)
   (let* ((buffer (lexer-buffer lx))
          (fp (the fixnum (fill-pointer buffer)))
          (new-fp (1+ fp)))
@@ -149,27 +141,27 @@ stack."))
           (setf (lexer-buffer lx) new-buffer))
         (setf (fill-pointer buffer) new-fp))
     (locally (declare (optimize (safety 0)))
-      (setf (char buffer fp) c))
+      (setf (aref buffer fp) item))
     fp))
 
 (defmethod lexer-input ((lx lexer))
-  (let ((in (lexer-in lx)))
-    (multiple-value-bind (c state) (stream-read in)
+  (let ((in (stream-underlying-stream lx)))
+    (multiple-value-bind (item state) (stream-read in)
       (ecase state
-        ((nil) (let* ((pos (the fixnum (lexer-push-extend lx c)))
+        ((nil) (let* ((pos (the fixnum (lexer-push-extend lx item)))
                       (buf (lexer-buffer lx)))
-                 (declare (type (vector character) buf))
-                 (cond ((or (and (char= #\Newline c)
+                 (declare (type vector buf))
+                 (cond ((or (and (char= #\Newline item)
                                  (or (not (< 0 pos))
                                      (char/= #\Return
                                              (char buf (1- pos)))))
-                            (char= #\Return c))
-                        (setf (lexer-in-character lx) 0)
-                        (incf (the fixnum (lexer-in-line lx))))
+                            (char= #\Return item))
+                        (setf (lexer-character lx) 0)
+                        (incf (the fixnum (lexer-line lx))))
                        (t
-                        (incf (the fixnum (lexer-in-character lx)))))
-                 (values c nil)))
-        ((:eof) (setf (lexer-in-eof lx) t)
+                        (incf (the fixnum (lexer-character lx)))))
+                 (values item nil)))
+        ((:eof) (setf (lexer-input-ended lx) t)
          (values nil :eof))
         ((:non-blocking)
          (signal (make-condition 'non-blocking :stream lx)))))))
@@ -186,7 +178,7 @@ stack."))
      (let ((length (- (the fixnum (fill-pointer (lexer-buffer lx)))
                       (the fixnum (lexer-match-start lx)))))
        (declare (type fixnum length))
-       (when (lexer-in-eof lx)
+       (when (lexer-input-ended lx)
          (if (= 0 length)
              (signal (make-instance 'end-of-file :stream lx))
              (return)))
@@ -272,7 +264,7 @@ stack."))
      (let ((match (match lx s)))
        (when match
          (return match)))
-     (when (lexer-in-eof lx)
+     (when (lexer-input-ended lx)
        (return))
      (lexer-input lx)
      (incf (the fixnum (lexer-match-start lx)))))
@@ -284,7 +276,7 @@ stack."))
 (defmethod match-not ((lx lexer) (f function))
   (let ((match-start (lexer-match-start lx)))
     (cond ((or (funcall f lx)
-               (lexer-in-eof lx))
+               (lexer-input-ended lx))
            (setf (lexer-match-start lx) match-start)
            nil)
           (t

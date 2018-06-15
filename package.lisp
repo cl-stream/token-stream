@@ -27,12 +27,12 @@
    #:discard-token
    #:lexer
    #:lexer-buffer
+   #:lexer-character
    #:lexer-eof-p
-   #:lexer-in-character
-   #:lexer-in-eof
-   #:lexer-in-line
    #:lexer-input
+   #:lexer-input-ended
    #:lexer-input-n
+   #:lexer-line
    #:lexer-match-char
    #:lexer-match-start
    #:lexer-token
