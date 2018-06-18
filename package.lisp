@@ -46,5 +46,7 @@
    #:pop-token
    #:push-token
    #:token
+   #:token-character
+   #:token-line
    #:token-stream
    #:token-string))
