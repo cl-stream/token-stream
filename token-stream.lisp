@@ -245,10 +245,15 @@ stack."))
 ;;  Matcher
 
 (defmethod match ((lx lexer) (s string))
-  (let ((length (the fixnum (length s))))
+  (let* ((length (length s))
+         (match-start (lexer-match-start lx))
+         (match-end (+ match-start length))
+         (buffer (lexer-buffer lx)))
+    (declare (type fixnum length match-start match-end)
+             (type (vector character) buffer))
     (lexer-input-n lx length)
-    (when (string= s (the (vector character) (lexer-buffer lx))
-                   :start2 (lexer-match-start lx))
+    (when (and (<= match-end (length buffer))
+               (string= s buffer :start2 match-start :end2 match-end))
       (incf (the fixnum (lexer-match-start lx)) length))))
 
 (defmethod match ((lx lexer) (c character))
