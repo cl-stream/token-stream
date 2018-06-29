@@ -271,6 +271,16 @@ stack."))
      (lexer-input lx)
      (incf (the fixnum (lexer-match-start lx)))))
 
+(defmethod match-until ((lx lexer) (f function))
+  (loop
+     (let ((match (funcall f lx)))
+       (when match
+         (return match)))
+     (when (lexer-input-ended lx)
+       (return))
+     (lexer-input lx)
+     (incf (the fixnum (lexer-match-start lx)))))
+
 (defmethod match-option ((lx lexer) (f function))
   (or (funcall f lx)
       (lexer-match-start lx)))
