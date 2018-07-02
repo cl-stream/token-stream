@@ -28,7 +28,7 @@
   :author "Thomas de Grivel <thoxdg@gmail.com>"
   :version "0.1"
   :description "Lexer classes for cl-stream"
-  :depends-on ("cl-stream")
+  :depends-on ("cl-stream" "matcher-stream")
   :components
   ((:file "package")
    (:file "token-stream" :depends-on ("package"))))

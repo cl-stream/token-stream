@@ -20,29 +20,17 @@
 
 (defpackage :token-stream
   (:use :cl-stream
-        :common-lisp)
+        :common-lisp
+        :matcher-stream)
   #.(cl-stream:shadowing-import-from)
   (:export
    #:*buffer-size*
    #:discard-token
    #:lexer
    #:lexer-buffer
-   #:lexer-character
    #:lexer-eof-p
-   #:lexer-input
-   #:lexer-input-ended
-   #:lexer-input-n
-   #:lexer-line
-   #:lexer-match-char
-   #:lexer-match-start
    #:lexer-token
    #:make-token
-   #:match
-   #:match-not
-   #:match-option
-   #:match-sequence
-   #:match-times
-   #:match-until
    #:pop-token
    #:push-token
    #:token
